@@ -25,7 +25,11 @@ export default ({store, redirect}) => {
         MessageBox.confirm("身份已过期", '提示',{
           confirmButtonText: '登录',
           showCancelButton: false,
-          showClose: false
+          showClose: false,
+          closeOnClickModal: false,
+          closeOnPressEscape: false,
+          closeOnHashChange: false,
+          type: 'warning'
         }).then(() => {
           redirect({path: 'login'})
         })

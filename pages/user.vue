@@ -6,14 +6,22 @@
       <el-progress :stroke-width="20" :text-inside="true" :percentage="progress"></el-progress>
     </div>
     <el-button type="primary" @click="upload">上传</el-button>
+    <div>
+      <p>进度条</p>
+      <el-progress :stroke-width="20" :text-inside="true" :percentage="hashProgress"></el-progress>
+    </div>
   </div>
 </template>
 <script>
+const CHUNK_SIZE = 0.5 * 1024 * 1024;
 export default {
   data(){
     return {
       file: null,
-      progress: 0
+      progress: 0,
+      chunks: null,
+      worker: null,
+      hashProgress: 0
     }
   },
   async mounted(){
@@ -47,7 +55,7 @@ export default {
       return new Promise(resolve => {
         const reader = new FileReader()
         reader.onload = function(){
-          const res = reader.result.split("").map(v => v.charCodeAt()).map(v => v.toString(16)).join("")
+          const res = reader.result.split("").map(v => v.charCodeAt()).map(v => v.toString(16).padStart(2, '0')).join(" ")
           resolve(res)
         }
         reader.readAsBinaryString(blob)
@@ -55,17 +63,53 @@ export default {
     },
     async isGif(file){
       const blob = await this.blobToString(file.slice(0, 6))
-      console.log(blob)
       return blob === '47 49 46 38 39 61' || blob === '47 49 46 38 37 61'
     },
     isImage(file){
       return this.isGif(file)
     },
-    async uploadFile(file){
-      if(!await this.isImage(file)){
-        alert("文件格式不对")
-        return
+    async isVideo(file){
+      const res = await this.blobToString(file.slice(0, 7))
+      return res === '00 00 00 18 66 74 79'
+    },
+    async calculateHashWorker(){
+      return new Promise(resolve => {
+        this.worker = new Worker('/work.js')
+        this.worker.postMessage({
+          chunks: this.chunks
+        })
+        this.worker.onmessage = e => {
+          const { progress, hash } = e.data
+          this.hashProgress = Number(progress.toFixed(2))
+          if(hash){
+            resolve(hash)
+          }
+        }
+      })
+    },
+    async createFileChunk(file, size = CHUNK_SIZE){
+      const chunks = []
+      let cur = 0;
+      while(cur < file.size){
+        chunks.push({index: cur, file: file.slice(cur, cur+size)})
+        cur+=size
       }
+      return chunks
+    },
+    async uploadFile(file){
+      this.chunks = this.createFileChunk(file)
+      const hash = await this.calculateHashWorker();
+      console.log(hash)
+      // if(!await this.isVideo(file)){
+      //   console.log('视频')
+      //   alert("文件格式不正确")
+      //   return;
+      // }
+      // if(!await this.isImage(file)){
+      //   console.log('图片')
+      //   alert("文件格式不对")
+      //   return
+      // }
       const form = new FormData();
       form.append('name', file.name);
       form.append('file', file);
