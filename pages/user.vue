@@ -14,6 +14,7 @@
 </template>
 <script>
 const CHUNK_SIZE = 0.5 * 1024 * 1024;
+import sparkMd5 from 'spark-md5'
 export default {
   data(){
     return {
@@ -72,7 +73,7 @@ export default {
       const res = await this.blobToString(file.slice(0, 7))
       return res === '00 00 00 18 66 74 79'
     },
-    async calculateHashWorker(){
+    async calculateHashWorker(chunks){
       return new Promise(resolve => {
         this.worker = new Worker('/work.js')
         this.worker.postMessage({
@@ -87,8 +88,8 @@ export default {
         }
       })
     },
-    async createFileChunk(file, size = CHUNK_SIZE){
-      const chunks = []
+    createFileChunk(file, size = CHUNK_SIZE){
+      let chunks = []
       let cur = 0;
       while(cur < file.size){
         chunks.push({index: cur, file: file.slice(cur, cur+size)})
@@ -96,10 +97,75 @@ export default {
       }
       return chunks
     },
+    async calculateHashHashSample(){
+      return new Promise(resolve => {
+        const spark = new sparkMd5.ArrayBuffer();
+        const reader = new FileReader()
+        const file = this.file;
+        const size = file.size
+        const offset = 2 * 1024 * 1024
+        let chunks = [file.slice(0, offset)]
+        let cur = offset
+        while(cur < size){
+          if(cur + offset >= size){
+            // 最后一个区块
+            chunks.push(file.slice(cur, cur + offset))
+          } else {
+            const mid = cur + offset / 2
+            const end = cur + offset
+            chunks.push(file.slice(cur, cur + 2))
+            chunks.push(file.slice(mid, mid + 2))
+            chunks.push(file.slice(end - 2, end))
+          }
+          cur += offset
+        }
+        reader.readAsArrayBuffer(new Blob(chunks))
+        reader.onload = e => {
+          spark.append(e.target.result)
+          resolve(spark.end())
+        }
+      })
+    },
+    async calculateHashIdle(){
+      const chunks = this.chunks
+      return new Promise(resolve => {
+        const spark = new sparkMd5.ArrayBuffer();
+        let count = 0;
+        const appendToSpark = async file => {
+          return new Promise(resolve => {
+            const reader = new FileReader()
+            reader.readAsArrayBuffer(file)
+            reader.onload = e => {
+              spark.append(e.target.result)
+              resolve()
+            }
+          })
+        }
+        const workLoop = async deadline => {
+          while(count < chunks.length && deadline.timeRemaining() > 1){
+            await appendToSpark(chunks[count].file)
+            count++
+            if(count < chunks.length){
+              this.hashProgress = Number(((100 * count) / chunks.length).toFixed(2))
+            } else {
+              this.hashProgress = 100
+              resolve(spark.end())
+            }
+          }
+          window.requestIdleCallback(workLoop)
+        }
+        window.requestIdleCallback(workLoop)
+      })
+    },
     async uploadFile(file){
+      this.file = file
       this.chunks = this.createFileChunk(file)
       const hash = await this.calculateHashWorker();
+      const hash1 = await this.calculateHashIdle();
+      const hash2 = await this.calculateHashHashSample();
       console.log(hash)
+      console.log(hash1)
+      console.log(hash2)
       // if(!await this.isVideo(file)){
       //   console.log('视频')
       //   alert("文件格式不正确")
@@ -110,14 +176,14 @@ export default {
       //   alert("文件格式不对")
       //   return
       // }
-      const form = new FormData();
-      form.append('name', file.name);
-      form.append('file', file);
-      const res = await this.$http.post('/uploadFile', form, {
-        onUploadProgress: progress => {
-          this.progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
-        }
-      })
+      // const form = new FormData();
+      // form.append('name', file.name);
+      // form.append('file', file);
+      // const res = await this.$http.post('/uploadFile', form, {
+      //   onUploadProgress: progress => {
+      //     this.progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
+      //   }
+      // })
       this.$refs.file.value = '';
     },
     async changeFile(e){

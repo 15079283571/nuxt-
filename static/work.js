@@ -1,5 +1,7 @@
 self.importScripts('spark-md5.min.js')
+
 self.onmessage = e => {
+  console.log(e)
   const { chunks } = e.data
   const spark = new self.SparkMD5.ArrayBuffer()
 
