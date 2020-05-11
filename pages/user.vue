@@ -10,19 +10,45 @@
       <p>进度条</p>
       <el-progress :stroke-width="20" :text-inside="true" :percentage="hashProgress"></el-progress>
     </div>
+    <div class="cube-container" :style="{width: cubeWidth + 'px'}">
+      <div class="cube" v-for="chunk in chunks" :key="chunk.name">
+        <div :class="{
+          'uploading': chunk.progress > 0 && chunk.progress < 100,
+          'success': chunk.progress === 100,
+          'error': chunk.progress < 0
+        }">
+        <i class="el-icon-loading" style="color: #f5f6f7" v-if="chunk.progress < 100 && chunk.progress > 0"></i>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 <script>
 const CHUNK_SIZE = 0.5 * 1024 * 1024;
 import sparkMd5 from 'spark-md5'
+import request from '../../../xuanfu/代码/前端代码/新后台代码/tool/request';
 export default {
   data(){
     return {
       file: null,
       progress: 0,
-      chunks: null,
+      chunks: [],
       worker: null,
-      hashProgress: 0
+      hashProgress: 0,
+      hash: null
+    }
+  },
+  computed: {
+    cubeWidth(){
+      return Math.ceil(Math.sqrt(this.chunks.length)) * 16
+    },
+    uploadProgress(){
+      if(!this.file || this.chunks.length){
+        return 0
+      }
+      const loaded = this.chunks.map(item => item.chunk.size + item.progress)
+                                .reduce((acc, cur) => acc + cur, 0)
+      return parseInt(((loaded*100) / this.file.size).toFixed(2))
     }
   },
   async mounted(){
@@ -159,13 +185,25 @@ export default {
     },
     async uploadFile(file){
       this.file = file
-      this.chunks = this.createFileChunk(file)
-      const hash = await this.calculateHashWorker();
-      const hash1 = await this.calculateHashIdle();
-      const hash2 = await this.calculateHashHashSample();
+      const chunks = this.createFileChunk(file)
+      // const hash = await this.calculateHashWorker();
+      // const hash1 = await this.calculateHashIdle();
+      const hash = await this.calculateHashHashSample();
+      this.hash = hash;
       console.log(hash)
       console.log(hash1)
       console.log(hash2)
+      this.chunks = chunks.map((chunk, index) => {
+        const name = hash + '-' + index
+        return {
+          hash,
+          name,
+          index,
+          chunk: chunk.file
+        }
+        // const fileReader = new FileReader()
+      })
+      await this.uploadChunks()
       // if(!await this.isVideo(file)){
       //   console.log('视频')
       //   alert("文件格式不正确")
@@ -186,6 +224,23 @@ export default {
       // })
       this.$refs.file.value = '';
     },
+    async uploadChunks(){
+      const request = this.chunk.map((chunk, index) => {
+        const form = new FormData()
+        form.append("name", chunk.name)
+        form.append("hash", chunk.hash)
+        form.append("chunk", chunk.chunk)
+        return form
+        // form.append("name", chunk.name)
+      }).map((form, index) => {
+        this.$http.post("/uploadFile",{
+          onUploadProgress: progress => {
+            this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
+          }
+        })
+      })
+      Promise.all(request)
+    },
     async changeFile(e){
       const [file] = e.target.files;
       if(!file){
@@ -196,10 +251,30 @@ export default {
   }
 }
 </script>
-<style>
+<style s>
   #drag{
     width: 100px;
     height: 100px;
     border: 2px dashed #eee;
+  }
+  .cube-container{
+    
+  }
+  .cube{
+    width: 14px;
+    height: 14px;
+    line-height: 12px;
+    border: 1px solid black;
+    background: #eee;
+    float: left;
+  }
+  .success{
+    background: green;
+  }
+  .error{
+    background: red;
+  }
+  .uploading{
+    background: blue;
   }
 </style>
