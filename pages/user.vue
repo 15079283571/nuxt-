@@ -16,7 +16,8 @@
           'uploading': chunk.progress > 0 && chunk.progress < 100,
           'success': chunk.progress === 100,
           'error': chunk.progress < 0
-        }">
+        }"
+        :style="{height: chunk.progress + '%'}">
         <i class="el-icon-loading" style="color: #f5f6f7" v-if="chunk.progress < 100 && chunk.progress > 0"></i>
         </div>
       </div>
@@ -26,7 +27,6 @@
 <script>
 const CHUNK_SIZE = 0.5 * 1024 * 1024;
 import sparkMd5 from 'spark-md5'
-import request from '../../../xuanfu/代码/前端代码/新后台代码/tool/request';
 export default {
   data(){
     return {
@@ -99,7 +99,7 @@ export default {
       const res = await this.blobToString(file.slice(0, 7))
       return res === '00 00 00 18 66 74 79'
     },
-    async calculateHashWorker(chunks){
+    async calculateHashWorker(){
       return new Promise(resolve => {
         this.worker = new Worker('/work.js')
         this.worker.postMessage({
@@ -191,15 +191,16 @@ export default {
       const hash = await this.calculateHashHashSample();
       this.hash = hash;
       console.log(hash)
-      console.log(hash1)
-      console.log(hash2)
+      // console.log(hash1)
+      // console.log(hash2)
       this.chunks = chunks.map((chunk, index) => {
         const name = hash + '-' + index
         return {
           hash,
           name,
           index,
-          chunk: chunk.file
+          chunk: chunk.file,
+          progress: 0
         }
         // const fileReader = new FileReader()
       })
@@ -225,7 +226,7 @@ export default {
       this.$refs.file.value = '';
     },
     async uploadChunks(){
-      const request = this.chunk.map((chunk, index) => {
+      const request = this.chunks.map((chunk, index) => {
         const form = new FormData()
         form.append("name", chunk.name)
         form.append("hash", chunk.hash)
@@ -233,13 +234,21 @@ export default {
         return form
         // form.append("name", chunk.name)
       }).map((form, index) => {
-        this.$http.post("/uploadFile",{
+        this.$http.post("/uploadFile", form,{
           onUploadProgress: progress => {
             this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
           }
         })
       })
       Promise.all(request)
+      await this.uploadAll()
+    },
+    async uploadAll(){
+      this.$http.post("/mergeFile",{
+        size: CHUNK_SIZE,
+        ext: this.file.name.split(".").pop(),
+        hash: this.hash
+      })
     },
     async changeFile(e){
       const [file] = e.target.files;
