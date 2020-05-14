@@ -25,7 +25,7 @@
   </div>
 </template>
 <script>
-const CHUNK_SIZE = 0.5 * 1024 * 1024;
+const CHUNK_SIZE = 0.1 * 1024 * 1024;
 import sparkMd5 from 'spark-md5'
 export default {
   data(){
@@ -190,7 +190,14 @@ export default {
       // const hash1 = await this.calculateHashIdle();
       const hash = await this.calculateHashHashSample();
       this.hash = hash;
-      console.log(hash)
+      const {data:{uploaded, uploadList}} = await this.$http.post('/checkFile',{
+        hash,
+        ext: this.file.name.split('.').pop()
+      })
+      if(uploaded){
+        return this.$message.success("秒传成功")
+      }
+      // console.log(hash)
       // console.log(hash1)
       // console.log(hash2)
       this.chunks = chunks.map((chunk, index) => {
@@ -200,11 +207,11 @@ export default {
           name,
           index,
           chunk: chunk.file,
-          progress: 0
+          progress: uploadList.indexOf(name) > -1 ? 100 : 0
         }
         // const fileReader = new FileReader()
       })
-      await this.uploadChunks()
+      await this.uploadChunks(uploadList)
       // if(!await this.isVideo(file)){
       //   console.log('视频')
       //   alert("文件格式不正确")
@@ -225,21 +232,25 @@ export default {
       // })
       this.$refs.file.value = '';
     },
-    async uploadChunks(){
-      const request = this.chunks.map((chunk, index) => {
-        const form = new FormData()
-        form.append("name", chunk.name)
-        form.append("hash", chunk.hash)
-        form.append("chunk", chunk.chunk)
-        return form
-        // form.append("name", chunk.name)
-      }).map((form, index) => {
-        this.$http.post("/uploadFile", form,{
-          onUploadProgress: progress => {
-            this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
-          }
+    async uploadChunks(uploadList){
+      console.log(uploadList)
+      console.log(this.chunks)
+      const request = this.chunks
+        .filter(item => uploadList.indexOf(item.name) === -1)
+        .map((chunk, index) => {
+          const form = new FormData()
+          form.append("name", chunk.name)
+          form.append("hash", chunk.hash)
+          form.append("chunk", chunk.chunk)
+          return {form, index: chunk.index}
+          // form.append("name", chunk.name)
+        }).map(({form, index}) => {
+          this.$http.post("/uploadFile", form,{
+            onUploadProgress: progress => {
+              this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
+            }
+          })
         })
-      })
       Promise.all(request)
       await this.uploadAll()
     },
