@@ -233,8 +233,6 @@ export default {
       this.$refs.file.value = '';
     },
     async uploadChunks(uploadList){
-      console.log(uploadList)
-      console.log(this.chunks)
       const request = this.chunks
         .filter(item => uploadList.indexOf(item.name) === -1)
         .map((chunk, index) => {
@@ -242,17 +240,63 @@ export default {
           form.append("name", chunk.name)
           form.append("hash", chunk.hash)
           form.append("chunk", chunk.chunk)
-          return {form, index: chunk.index}
+          return {form, index: chunk.index,error: 0}
           // form.append("name", chunk.name)
-        }).map(({form, index}) => {
-          this.$http.post("/uploadFile", form,{
-            onUploadProgress: progress => {
-              this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
-            }
-          })
         })
-      Promise.all(request)
+        // .map(({form, index}) => {
+        //   this.$http.post("/uploadFile", form,{
+        //     onUploadProgress: progress => {
+        //       this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
+        //     }
+        //   })
+        // })
+      await this.upLoadRequest(request)
+      // Promise.all(request)
       await this.uploadAll()
+    },
+    async upLoadRequest(requestList, limit = 3){
+      return new Promise((resolve, reject) => {
+        const len = requestList.length
+        let cur = 0;
+        let queue = [];
+        let isStop = false
+        const start = async () => {
+          if(isStop){
+            return
+          }
+          const task = requestList.shift()
+          if(task){
+            const {form, index} = task
+            try{
+              await this.$http.post("/uploadFile", form,{
+                onUploadProgress: progress => {
+                  this.chunks[index].progress = Number(((progress.loaded / progress.total) * 100).toFixed(2))
+                }
+              })
+              if(cur === len-1){
+                resolve()
+              }else{
+                cur++
+                start()
+              }
+            }catch(e){
+              if(task.error < 3){
+                this.chunks[index].progress = -1;
+                task.error++
+                requestList.unshift(task)
+                start()
+              }else{
+                reject()
+                isStop = true
+              }
+            }
+          }
+        }
+        while(limit > 0){
+          start()
+          limit--
+        }
+      })
     },
     async uploadAll(){
       this.$http.post("/mergeFile",{
