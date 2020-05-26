@@ -285,7 +285,7 @@ export default {
                 task.error++
                 requestList.unshift(task)
                 start()
-              }else{
+              }else{  
                 reject()
                 isStop = true
               }
